@@ -159,6 +159,9 @@ static size_t log_print_text(char *buf, size_t size)
 	if (size == 0)
 		return 0;
 
+	/* Line_size Out-of-bounds check */
+	text_size = text_size < (OPTEE_LOG_LINE_MAX - 16) ? text_size : OPTEE_LOG_LINE_MAX - 16;
+
 	do {
 		const char *next = memchr(text, '\n', text_size);
 		size_t line_size;
