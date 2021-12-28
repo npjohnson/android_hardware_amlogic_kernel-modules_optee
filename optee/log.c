@@ -21,6 +21,7 @@
 #include <linux/sysfs.h>
 #include <linux/kthread.h>
 #include <generated/uapi/linux/version.h>
+#include <linux/workqueue.h>
 
 #include "optee_smc.h"
 #include "optee_private.h"
@@ -56,6 +57,9 @@ static struct timer_list optee_log_timer;
 static uint8_t line_buff[OPTEE_LOG_LINE_MAX];
 static uint32_t looped = 0;
 static void *g_shm_va;
+
+struct delayed_work log_work;
+static struct workqueue_struct *log_workqueue;
 
 static bool init_shm(phys_addr_t shm_pa, uint32_t shm_size)
 {
@@ -282,14 +286,12 @@ static void log_buff_output(void)
 		log_print_text(read_buff, len);
 }
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 34)
-static void log_timer_func(struct timer_list *timer)
-#else
-static void log_timer_func(unsigned long arg)
-#endif
+static void do_log_timer(struct work_struct *work)
 {
 	log_buff_output();
-	mod_timer(&optee_log_timer, jiffies + OPTEE_LOG_TIMER_INTERVAL * HZ);
+	if (queue_delayed_work(log_workqueue, &log_work, OPTEE_LOG_TIMER_INTERVAL * HZ) == 0) {
+		pr_err("%s:%d Failed to join the workqueue\n", __func__, __LINE__);
+	}
 }
 
 int optee_log_init(struct tee_device *tee_dev, phys_addr_t shm_pa,
@@ -322,14 +324,12 @@ int optee_log_init(struct tee_device *tee_dev, phys_addr_t shm_pa,
 			goto err;
 	}
 
-	/* init timer */
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 34)
-	timer_setup(&optee_log_timer, log_timer_func, 0);
-#else
-	setup_timer(&optee_log_timer, log_timer_func, 0);
-#endif
-	optee_log_timer.expires = jiffies + HZ;
-	add_timer(&optee_log_timer);
+	/* init workqueue */
+	log_workqueue = create_singlethread_workqueue("tee-log-wq");
+	INIT_DELAYED_WORK(&log_work,do_log_timer);
+	if (queue_delayed_work(log_workqueue, &log_work, OPTEE_LOG_TIMER_INTERVAL * HZ) == 0) {
+		pr_err("%s:%d Failed to join the workqueue.\n", __func__, __LINE__);
+	}
 
 err:
 	return rc;
