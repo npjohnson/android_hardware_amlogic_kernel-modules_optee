@@ -53,13 +53,12 @@ struct optee_log_ctl_s {
 static struct optee_log_ctl_s *optee_log_ctl;
 static unsigned char *optee_log_buff;
 static uint32_t optee_log_mode = 1;
-static struct timer_list optee_log_timer;
 static uint8_t line_buff[OPTEE_LOG_LINE_MAX];
 static uint32_t looped = 0;
 static void *g_shm_va;
 
 struct delayed_work log_work;
-static struct workqueue_struct *log_workqueue;
+static struct workqueue_struct *log_workqueue = NULL;
 
 static bool init_shm(phys_addr_t shm_pa, uint32_t shm_size)
 {
@@ -343,7 +342,10 @@ void optee_log_exit(struct tee_device *tee_dev)
 	int i = 0;
 	int n = 0;
 
-	del_timer_sync(&optee_log_timer);
+	if (log_workqueue) {
+		cancel_delayed_work_sync(&log_work);
+		destroy_workqueue(log_workqueue);
+	}
 
 	n = sizeof(log_class_attrs) / sizeof(struct class_attribute);
 	for (i = 0; i < n; i++)
