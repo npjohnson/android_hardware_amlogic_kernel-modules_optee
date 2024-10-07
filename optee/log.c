@@ -21,6 +21,7 @@
 #include <linux/sysfs.h>
 #include <linux/kthread.h>
 #include <generated/uapi/linux/version.h>
+#include <linux/workqueue.h>
 
 #include "optee_smc.h"
 #include "optee_private.h"
@@ -52,19 +53,25 @@ struct optee_log_ctl_s {
 static struct optee_log_ctl_s *optee_log_ctl;
 static unsigned char *optee_log_buff;
 static uint32_t optee_log_mode = 1;
-static struct timer_list optee_log_timer;
 static uint8_t line_buff[OPTEE_LOG_LINE_MAX];
 static uint32_t looped = 0;
 static void *g_shm_va;
+
+struct delayed_work log_work;
+static struct workqueue_struct *log_workqueue = NULL;
 
 static bool init_shm(phys_addr_t shm_pa, uint32_t shm_size)
 {
 	struct arm_smccc_res smccc;
 	uint32_t start = 1;
 
+/* pfn_valid returns incorrect value in kernel 5.15 */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 0)
+#else
 	if (pfn_valid(__phys_to_pfn(shm_pa)))
 		g_shm_va = (void __iomem *)__phys_to_virt(shm_pa);
 	else
+#endif
 		g_shm_va = ioremap_cache(shm_pa, shm_size);
 
 	if (!g_shm_va) {
@@ -144,6 +151,19 @@ static ssize_t log_buff_get_read_buff(char **buf, int len)
 
 	return read_size;
 }
+/* not defined in kernel 5.15 s4d */
+void *memchr(const void *s, int c, size_t n)
+{
+	const unsigned char *p = s;
+
+	while (n-- != 0) {
+		if ((unsigned char)c == *p++) {
+			return (void *)(p - 1);
+		}
+	}
+
+	return NULL;
+}
 
 static size_t log_print_text(char *buf, size_t size)
 {
@@ -154,6 +174,9 @@ static size_t log_print_text(char *buf, size_t size)
 
 	if (size == 0)
 		return 0;
+
+	/* Line_size Out-of-bounds check */
+	text_size = text_size < (OPTEE_LOG_LINE_MAX - 16) ? text_size : OPTEE_LOG_LINE_MAX - 16;
 
 	do {
 		const char *next = memchr(text, '\n', text_size);
@@ -282,14 +305,12 @@ static void log_buff_output(void)
 		log_print_text(read_buff, len);
 }
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 34)
-static void log_timer_func(struct timer_list *timer)
-#else
-static void log_timer_func(unsigned long arg)
-#endif
+static void do_log_timer(struct work_struct *work)
 {
 	log_buff_output();
-	mod_timer(&optee_log_timer, jiffies + OPTEE_LOG_TIMER_INTERVAL * HZ);
+	if (queue_delayed_work(log_workqueue, &log_work, OPTEE_LOG_TIMER_INTERVAL * HZ) == 0) {
+		pr_err("%s:%d Failed to join the workqueue\n", __func__, __LINE__);
+	}
 }
 
 int optee_log_init(struct tee_device *tee_dev, phys_addr_t shm_pa,
@@ -322,14 +343,12 @@ int optee_log_init(struct tee_device *tee_dev, phys_addr_t shm_pa,
 			goto err;
 	}
 
-	/* init timer */
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 34)
-	timer_setup(&optee_log_timer, log_timer_func, 0);
-#else
-	setup_timer(&optee_log_timer, log_timer_func, 0);
-#endif
-	optee_log_timer.expires = jiffies + HZ;
-	add_timer(&optee_log_timer);
+	/* init workqueue */
+	log_workqueue = create_singlethread_workqueue("tee-log-wq");
+	INIT_DELAYED_WORK(&log_work,do_log_timer);
+	if (queue_delayed_work(log_workqueue, &log_work, OPTEE_LOG_TIMER_INTERVAL * HZ) == 0) {
+		pr_err("%s:%d Failed to join the workqueue.\n", __func__, __LINE__);
+	}
 
 err:
 	return rc;
@@ -340,7 +359,10 @@ void optee_log_exit(struct tee_device *tee_dev)
 	int i = 0;
 	int n = 0;
 
-	del_timer_sync(&optee_log_timer);
+	if (log_workqueue) {
+		cancel_delayed_work_sync(&log_work);
+		destroy_workqueue(log_workqueue);
+	}
 
 	n = sizeof(log_class_attrs) / sizeof(struct class_attribute);
 	for (i = 0; i < n; i++)

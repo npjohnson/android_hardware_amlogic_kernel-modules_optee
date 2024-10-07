@@ -50,19 +50,26 @@ static irqreturn_t vsync_isr(int irq, void *dev_id)
 	return IRQ_HANDLED;
 }
 
+void parse_soc(char *src, char soc[32])
+{
+	strcpy(soc, src + strlen("amlogic, "));
+	if (strcmp(soc, "s4d") == 0)
+		soc[2] = '\0';
+}
+
 static int get_wm_irq_id(void)
 {
 	int irq_id = 0;
 	struct device_node *root_node = of_find_node_by_path("/");
 	struct property *root_prop = NULL;
-	char *soc = NULL;
+	char soc[32] = { '\0' };
 	char com_val_meson[32] = {"amlogic, meson-"};
 	char com_val_fb[32] = {"amlogic, fb-"};
 	struct device_node *com_node = NULL;
 
 	for (root_prop = root_node->properties; root_prop; root_prop = root_prop->next) {
 		if (of_prop_cmp(root_prop->name, "compatible") == 0) {
-			soc = ((char *)root_prop->value) + strlen("amlogic, ");
+			parse_soc((char *)root_prop->value, soc);
 
 			strcat(com_val_meson, soc);
 			com_node = of_find_compatible_node(NULL, NULL, com_val_meson);

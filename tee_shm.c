@@ -80,8 +80,9 @@ static void tee_shm_op_release(struct dma_buf *dmabuf)
 
 	tee_shm_release(shm);
 }
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 43)
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 12)
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 12)
 static void *tee_shm_op_map(struct dma_buf *dmabuf, unsigned long pgnum)
 {
 	return NULL;
@@ -111,7 +112,9 @@ static struct dma_buf_ops tee_shm_dma_buf_ops = {
 	.map_dma_buf = tee_shm_op_map_dma_buf,
 	.unmap_dma_buf = tee_shm_op_unmap_dma_buf,
 	.release = tee_shm_op_release,
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 12)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 43)
+
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 12)
 	.map = tee_shm_op_map,
 #else
 	.kmap_atomic = tee_shm_op_kmap_atomic,
@@ -367,7 +370,7 @@ EXPORT_SYMBOL_GPL(tee_shm_free);
 /**
  * tee_shm_va2pa() - Get physical address of a virtual address
  * @shm:	Shared memory handle
- * @va:		Virtual address to tranlsate
+ * @va:		Virtual address to translate
  * @pa:		Returned physical address
  * @returns 0 on success and < 0 on failure
  */
@@ -389,7 +392,7 @@ EXPORT_SYMBOL_GPL(tee_shm_va2pa);
 /**
  * tee_shm_pa2va() - Get virtual address of a physical address
  * @shm:	Shared memory handle
- * @pa:		Physical address to tranlsate
+ * @pa:		Physical address to translate
  * @va:		Returned virtual address
  * @returns 0 on success and < 0 on failure
  */

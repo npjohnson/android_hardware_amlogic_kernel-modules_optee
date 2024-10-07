@@ -41,7 +41,7 @@ void optee_wait_queue_exit(struct optee_wait_queue *priv)
 
 static void handle_rpc_func_cmd_get_time(struct optee_msg_arg *arg)
 {
-	struct timespec ts;
+	struct timespec64 ts;
 
 	if (arg->num_params != 1)
 		goto bad;
@@ -49,7 +49,7 @@ static void handle_rpc_func_cmd_get_time(struct optee_msg_arg *arg)
 			OPTEE_MSG_ATTR_TYPE_VALUE_OUTPUT)
 		goto bad;
 
-	getnstimeofday(&ts);
+	ktime_get_real_ts64(&ts);
 	arg->params[0].u.value.a = ts.tv_sec;
 	arg->params[0].u.value.b = ts.tv_nsec;
 

@@ -30,6 +30,8 @@
 #include "optee_private.h"
 #include "optee_smc.h"
 #include "../tee_private.h"
+#include <linux/dma-mapping.h>
+#include <generated/uapi/linux/version.h>
 
 #define DRIVER_NAME "optee"
 
@@ -102,7 +104,7 @@ int optee_from_msg_param(struct tee_param *params, size_t num_params,
  * optee_to_msg_param() - convert from struct tee_params to OPTEE_MSG parameters
  * @msg_params:	OPTEE_MSG parameters
  * @num_params:	number of elements in the parameter arrays
- * @params:	subsystem itnernal parameter representation
+ * @params:	subsystem internal parameter representation
  * Returns 0 on success or <0 on failure
  */
 int optee_to_msg_param(struct optee_msg_param *msg_params, size_t num_params,
@@ -381,9 +383,12 @@ optee_config_shm_memremap(optee_invoke_fn *invoke_fn, void **memremaped_shm,
 	}
 
 	/* For normal memory we already have a cacheable mapping. */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 0)
+#else
 	if (pfn_valid(__phys_to_pfn(paddr)))
 		va = (void __iomem *)__phys_to_virt(paddr);
 	else
+#endif
 		va = ioremap_cache(paddr, size);
 
 	if (!va) {
@@ -485,12 +490,18 @@ static int optee_probe(struct platform_device *pdev)
 	}
 	optee->teedev = teedev;
 
+	optee->teedev->dev.coherent_dma_mask = DMA_BIT_MASK(64);
+	optee->teedev->dev.dma_mask = &optee->teedev->dev.coherent_dma_mask;
+
 	teedev = tee_device_alloc(&optee_supp_desc, NULL, pool, optee);
 	if (IS_ERR(teedev)) {
 		rc = PTR_ERR(teedev);
 		goto err;
 	}
 	optee->supp_teedev = teedev;
+
+	optee->supp_teedev->dev.coherent_dma_mask = DMA_BIT_MASK(64);
+	optee->supp_teedev->dev.dma_mask = &optee->supp_teedev->dev.coherent_dma_mask;
 
 	rc = tee_device_register(optee->teedev);
 	if (rc)
@@ -627,6 +638,5 @@ module_exit(optee_driver_exit);
 
 MODULE_AUTHOR("Linaro");
 MODULE_DESCRIPTION("OP-TEE driver");
-MODULE_SUPPORTED_DEVICE("");
 MODULE_VERSION("1.0");
 MODULE_LICENSE("GPL v2");

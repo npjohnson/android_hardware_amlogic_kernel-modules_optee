@@ -13,6 +13,7 @@
  */
 #include <linux/linkage.h>
 #include <asm/asm-offsets.h>
+#include <generated/uapi/linux/version.h>
 
 #define ARM_SMCCC_RES_X0_OFFS 0
 #define ARM_SMCCC_RES_X2_OFFS 16
@@ -32,15 +33,27 @@
  *		  unsigned long a3, unsigned long a4, unsigned long a5,
  *		  unsigned long a6, unsigned long a7, struct arm_smccc_res *res)
  */
-ENTRY(arm_smccc_smc)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 43)
+SYM_FUNC_START(__arm_smccc_smc)
 	SMCCC	smc
+SYM_FUNC_END(__arm_smccc_smc)
+#else
+ENTRY(arm_smccc_smc)
+	SMCCC   smc
 ENDPROC(arm_smccc_smc)
+#endif
 
 /*
  * void arm_smccc_hvc(unsigned long a0, unsigned long a1, unsigned long a2,
  *		  unsigned long a3, unsigned long a4, unsigned long a5,
  *		  unsigned long a6, unsigned long a7, struct arm_smccc_res *res)
  */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 43)
+SYM_FUNC_START(__arm_smccc_hvc)
+	SMCCC	hvc
+SYM_FUNC_END(__arm_smccc_hvc)
+#else
 ENTRY(arm_smccc_hvc)
 	SMCCC	hvc
 ENDPROC(arm_smccc_hvc)
+#endif
